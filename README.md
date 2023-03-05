@@ -8,7 +8,7 @@
 
 要调用官方提供的 API，必须先注册 OpenAI 账户，然后根据图示生成 API Key
 
-![](./images/API Keys.png)
+![](./images/APIKeys.png)
 
 ## 基本概念
 
