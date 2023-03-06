@@ -12,6 +12,7 @@ dialogue_records = queue.Queue()  # 历史记录, 用于支持上下文对话, �
 dialogue_memory_size = 5  # 历史记录窗口的最大值
 enable_context_support = True  # 是否开启上下文支持
 temperature_value = 0.6
+enable_authentication = False
 
 
 def get_openai_response(input_msg):
@@ -41,14 +42,14 @@ def conversation_history(input_msg, history):
     history = history or []
     output_msg = get_openai_response(input_msg)
 
+    dialogue_records.put({"role": "user", "content": input_msg})
+    dialogue_records.put({"role": "assistant", "content": output_msg})
+
     # 当存储的对话记录数量超出窗口长度, 触发出队(连续2次, 包括指令与回答)
     if math.ceil(dialogue_records.qsize() / 2) > dialogue_memory_size:
         print("record size bigger than the maximum, pop the queue twice")
         dialogue_records.get()
         dialogue_records.get()
-    else:
-        dialogue_records.put({"role": "user", "content": input_msg})
-        dialogue_records.put({"role": "assistant", "content": output_msg})
 
     print("current record size: {}, max size: {}".format(dialogue_records.qsize() / 2, dialogue_memory_size))
 
@@ -94,6 +95,15 @@ def certify_auth(username, password):
         return False
 
 
+def transcribe(audio_source):
+    if audio_source is None:
+        return ""
+    else:
+        audio_file = open(audio_source, "rb")
+        transcript = openai.Audio.transcribe("whisper-1", audio_file)
+        return transcript["text"]
+
+
 if __name__ == "__main__":
     # 读操作系统的环境变量, 本地调试前需要设置一下环境变量; 如果是部署到远端平台, 也可以在平台内设置
     api_key_name = os.getenv(OPEN_AI_KEY_NAME)
@@ -113,18 +123,25 @@ if __name__ == "__main__":
             # context_switch = gr.Checkbox(label="context switch", info="Enable context-based dialogue", value=enable_context_support)
             # context_switch.change(on_context_switch_changed, inputs=[context_switch], outputs=[])
 
-            memory_size = gr.Number(label="memory size", value=dialogue_memory_size)
+            memory_size = gr.Number(label="Memory Size", value=dialogue_memory_size)
             memory_size.change(on_memory_size_changed, inputs=[memory_size], outputs=[])
 
-            temperature_slider = gr.Slider(0, 1, step=0.1, label="temperature")
-            temperature_slider.change(on_temperature_changed, inputs=[temperature_slider], outputs=[])
+            # temperature_slider = gr.Slider(0, 1, step=0.1, label="temperature")
+            # temperature_slider.change(on_temperature_changed, inputs=[temperature_slider], outputs=[])
 
             chatbot = gr.Chatbot(label="Chatting Window")
 
-            message = gr.Textbox(label="input message", placeholder="Enter your message...")
+            message = gr.Textbox(label="Text Input", placeholder="Enter your message...")
+
+            audio_input = gr.Audio(source="microphone", label="Audio Input", type="filepath")
+            audio_input.change(transcribe, inputs=[audio_input], outputs=[message])
+
             submit = gr.Button("Send")
             state = gr.State()
             submit.click(conversation_history, inputs=[message, state], outputs=[chatbot, state])
 
         # 启动
-        blocks.launch(auth=certify_auth)
+        if not enable_authentication:
+            blocks.launch()
+        else:
+            blocks.launch(auth=certify_auth)
