@@ -1,11 +1,12 @@
 import os
 import openai
 import gradio as gr
-import configobj
 import queue
 import math
+import hashlib
 
 OPEN_AI_KEY_NAME = "OPENAI_API_KEY"  # 环境变量名, 需要将 openai 平台提供的 key 添加到系统的环境变量中
+OPEN_AI_APP_PWD_KEY = "OPENAI_APP_PWD_KEY"
 personality_des = "你是一个热心友好的助手"  # 性格设定
 dialogue_records = queue.Queue()  # 历史记录, 用于支持上下文对话, 以队列形式组织, 队内元素超出上限则出队
 dialogue_memory_size = 5  # 历史记录窗口的最大值
@@ -83,16 +84,23 @@ def on_context_switch_changed(enable):
     return enable_context_support
 
 
-if __name__ == "__main__":
-    # 先找环境变量, 下面列出2种方法
-    # 方法1: 读工程内的配置文件, 方便但不安全
-    # config = configobj.ConfigObj('.env')
-    # api_key_name = config[OPEN_AI_KEY_NAME]
+def certify_auth(username, password):
+    target_pwd = os.getenv(OPEN_AI_APP_PWD_KEY)
+    encoded_pwd = hashlib.md5(password.encode()).hexdigest()
 
-    # 方法2: 读操作系统的环境变量, 本地调试前需要设置一下环境变量; 如果是部署到远端平台, 也可以在平台内设置
+    if encoded_pwd == target_pwd:
+        return True
+    else:
+        return False
+
+
+if __name__ == "__main__":
+    # 读操作系统的环境变量, 本地调试前需要设置一下环境变量; 如果是部署到远端平台, 也可以在平台内设置
     api_key_name = os.getenv(OPEN_AI_KEY_NAME)
 
-    if api_key_name is not None:
+    if api_key_name is None:
+        print("No such environment variable called: {}".format(OPEN_AI_KEY_NAME))
+    else:
         # 设置 api key
         openai.api_key = api_key_name
 
@@ -119,6 +127,4 @@ if __name__ == "__main__":
             submit.click(conversation_history, inputs=[message, state], outputs=[chatbot, state])
 
         # 启动
-        blocks.launch()
-    else:
-        print("No such environment variable called: {}".format(OPEN_AI_KEY_NAME))
+        blocks.launch(auth=certify_auth)
