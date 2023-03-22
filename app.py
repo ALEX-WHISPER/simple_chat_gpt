@@ -4,19 +4,20 @@ import gradio as gr
 import queue
 import math
 import hashlib
+import json
 
 OPEN_AI_KEY_NAME = "OPENAI_API_KEY"  # 环境变量名, 需要将 openai 平台提供的 key 添加到系统的环境变量中
 OPEN_AI_APP_PWD_KEY = "OPENAI_APP_PWD_KEY"
-personality_des = "你是一个热心友好的助手"  # 性格设定
+system_desc = ""  # 性格设定
 dialogue_records = queue.Queue()  # 历史记录, 用于支持上下文对话, 以队列形式组织, 队内元素超出上限则出队
-dialogue_memory_size = 5  # 历史记录窗口的最大值
+dialogue_memory_size = 10  # 历史记录窗口的最大值
 enable_context_support = True  # 是否开启上下文支持
 temperature_value = 0.6
-enable_authentication = True
+enable_authentication = False
 
 
 def get_openai_response(input_msg):
-    system_message = {"role": "system", "content": personality_des}
+    system_message = {"role": "system", "content": system_desc}
     user_message = {"role": "user", "content": input_msg}
 
     # system 设定在最前, 其次是历史记录, 最后是当前的用户输入
@@ -59,9 +60,9 @@ def conversation_history(input_msg, history):
 
 
 def on_personality_changed(description):
-    global personality_des
-    personality_des = description
-    print("personality change to: {}".format(personality_des))
+    global system_desc
+    system_desc = description
+    print("personality change to: {}".format(system_desc))
 
 
 def on_memory_size_changed(new_size):
@@ -85,6 +86,11 @@ def on_context_switch_changed(enable):
     return enable_context_support
 
 
+def on_role_changed(new_role):
+    global system_desc
+    system_desc = load_prompt_content(new_role)
+
+
 def certify_auth(username, password):
     target_pwd = os.getenv(OPEN_AI_APP_PWD_KEY)
     encoded_pwd = hashlib.md5(password.encode()).hexdigest()
@@ -102,6 +108,38 @@ def transcribe(audio_source):
         audio_file = open(audio_source, "rb")
         transcript = openai.Audio.transcribe("whisper-1", audio_file)
         return transcript["text"]
+
+
+def load_prompt_desc():
+    desc_list = []
+
+    f = open("prompts.json")
+    data = json.load(f)
+    for item in data['sys_prompts']:
+        desc_list.append(item['des'])
+    f.close()
+
+    if len(desc_list) == 0:
+        desc_list.append("assistant")
+
+    return desc_list
+
+
+def load_prompt_content(index):
+    prompt_content = ""
+
+    f = open("prompts.json")
+    data = json.load(f)
+    for item in data['sys_prompts']:
+        if str(item['index']) == str(index):
+            prompt_content = item['content']
+    f.close()
+
+    if len(prompt_content) == 0:
+        print(f"ERROR: prompt content with index '{index}' not found!")
+        prompt_content = "You are a kind and helpful assistant"
+
+    return prompt_content
 
 
 if __name__ == "__main__":
@@ -123,19 +161,27 @@ if __name__ == "__main__":
             # context_switch = gr.Checkbox(label="context switch", info="Enable context-based dialogue", value=enable_context_support)
             # context_switch.change(on_context_switch_changed, inputs=[context_switch], outputs=[])
 
-            memory_size = gr.Number(label="Memory Size", value=dialogue_memory_size)
-            memory_size.change(on_memory_size_changed, inputs=[memory_size], outputs=[])
+            # memory_size = gr.Number(label="Memory Size", value=dialogue_memory_size)
+            # memory_size.change(on_memory_size_changed, inputs=[memory_size], outputs=[])
 
             # temperature_slider = gr.Slider(0, 1, step=0.1, label="temperature")
             # temperature_slider.change(on_temperature_changed, inputs=[temperature_slider], outputs=[])
 
+            choice_list = load_prompt_desc()
+            role_radio = gr.Radio(choices=choice_list, label="Choose The Role", value=choice_list[0], type="index")
+            role_radio.change(on_role_changed, inputs=[role_radio], outputs=[])
+
+            # talking area
             chatbot = gr.Chatbot(label="Chatting Window")
 
+            # text input area
             message = gr.Textbox(label="Text Input", placeholder="Enter your message...")
 
+            # audio input area
             audio_input = gr.Audio(source="microphone", label="Audio Input", type="filepath")
             audio_input.change(transcribe, inputs=[audio_input], outputs=[message])
 
+            # submit button
             submit = gr.Button("Send")
             state = gr.State()
             submit.click(conversation_history, inputs=[message, state], outputs=[chatbot, state])
