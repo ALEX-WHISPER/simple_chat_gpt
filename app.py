@@ -13,7 +13,7 @@ dialogue_records = queue.Queue()  # 历史记录, 用于支持上下文对话, �
 dialogue_memory_size = 10  # 历史记录窗口的最大值
 enable_context_support = True  # 是否开启上下文支持
 temperature_value = 0.6
-enable_authentication = False
+enable_authentication = True
 
 
 def get_openai_response(input_msg):
