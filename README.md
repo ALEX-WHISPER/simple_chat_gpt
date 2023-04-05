@@ -1,12 +1,18 @@
 # 概述
 
-以 OpenAI 提供的官方 API 为基础，利用 Python 作为主要的开发语言，再以 Gradio 库作为前端框架，最后将工程部署到 Hugging Face 平台，完成一个能通过浏览器在任意设备上访问的、具有简单用户界面的聊天机器人应用
+- 以 OpenAI 提供的官方 API 为核心，以 Python 为开发语言，以 Gradio 库作为前端框架(无需繁琐的 `html + css + js` 开发)，最后将工程部署到 Hugging Face 平台，完成一个能通过浏览器在任意设备上访问的、具有简单用户界面的聊天机器人应用
+
+- 本文将首先提供工程源码，着重于介绍工程的配置、调试和部署等过程，不赘述具体的功能实现，有效代码量很短(200行左右)，参考注释阅读即可
+
+- 下图为成品概览，除了普通的文字对话，还加入了语音输入、预设角色(可自行扩展)等功能
+
+  ![](./images/SimpleChatGPT_Overview.png)
 
 # OpenAI 平台相关
 
 ## API 调用
 
-要调用官方提供的 API，必须先注册 OpenAI 账户，然后根据图示生成 API Key
+要调用官方提供的 API，必须先注册 OpenAI 账户(需要梯子)，然后根据图示生成 API Key
 
 ![](./images/APIKeys.png)
 
@@ -15,9 +21,7 @@
 + 写代码之前，先参考[官方文档](https://platform.openai.com/docs/introduction/overview)，理解几个关键的基本概念，包括 prompt, completion, token 的含义
 + 阅读代码时，参考 [API 接口文档](https://platform.openai.com/docs/guides/chat/introduction)，理解 API 本身提供的参数含义
 
-# 功能逻辑
-
-## 环境配置
+# 环境配置
 
 + 把示例工程拉取到本地
 
@@ -37,30 +41,28 @@
 
   ![](./images/RunPython.png)
 
-## 本地运行
+# 本地运行
 
 + 打开浏览器，访问 `localhost:7860`，可以本地运行该应用
 + 每次改完代码，都要重新运行
-
-# 前端框架
-
-+ 整个 UI 框架是基于 Gradio 库完成的，无需复杂的 `html + css + js` 开发，直接使用已有的UI组件即可，具体方法参考工程内的代码，以及 [Gradio 文档](https://gradio.app/docs/) 
 
 # 部署
 
 + 把代码里最后一句 `blocks.launch()`改成`blocks.launch(share=True)`，会生成一个临时的公共链接 `xxxxx.gradio.app`，实际上是以你本机作为 server 的一个代理链接，有效期为 24 小时，期间只要你的 python 程序处于运行状态，其他设备就能访问这个链接
 
-+ 如果要把这个应用分享给其他人，还需要将工程部署到远端，这里我们选择 Hugging Face 平台
++ 如果要把这个应用分享给其他人，还需要将工程部署到远端，这里我们选择 Hugging Face 平台。选择默认的硬件配置可以免费部署，详细步骤参考文档：[Sharing Your App](https://gradio.app/sharing-your-app/)，跟着 gif 操作就可以。这一步完成后，程序就在远端跑起来了
 
-+ 参考文档：[Sharing Your App](https://gradio.app/sharing-your-app/)，将工程部署到 Hugging Face，选择默认的硬件配置可以免费部署，文档中有详细的操作步骤，跟着操作就可以。这一步完成后，工程就在远端跑起来了
-
-+ 把新建的 Space 的可见性设为 **Public**，再选择 `Embed this Space`，会生成一个访问远端服务器的新链接，至此其他设备也都能通过浏览器体验这个应用了
++ 把新建的 Space 的可见性设为 **Public**，再选择 `Embed this Space`，会生成一个访问远端服务器的新链接，把链接分享给其他人，其他设备就也通过浏览器体验这个应用了
 
   ![](./images/embed_this_space.png)
 
-# 一些思考
++ # 安全性
 
-+ 必须有意识地持续提高自身英文水平，尤其是英文文档的阅读能力。今后 OpenAI 的发展动向必定最先以英文的形式呈现，所有的中文内容都至少是二手信息，即便中文开发者人数众多，有很多值得借鉴，但也不乏依靠信息优势贩卖焦虑、危言耸听者。英文能力是今后辨别是非、判断趋势的重要基础
-+ 提高对各类信息的整合能力，包括对相关资讯、日常场景应用的敏锐度，以及快速吸收和迭代新技术的能力
-+ 持续学习、持续积累，努力拓宽知识面和视野，才能看到更多可能性
+  这里涉及到的安全性问题，核心在于 OpenAI 的 API Key，因为对 API 的每次调用都在花钱(即便每个开发者都有 18 刀的初始额度)，因此我们首先要保证 **API Key 的值不泄露**，其次要保证**程序不被其他人滥用**，这里只提供最简单的实现思路，详细的实现参考代码
+
+  - 保证 API Key 的值不泄露：可以把它作为环境变量来处理。例如只有部署了这个程序的服务器上存有这个环境变量，就避免了把它以明文的方式写死在代码里，或是以配置的方式留在代码仓库中，从而被人盗用。Hugging Face 支持对服务器配置环境变量：Space 主页 → Settings → Repository secrets
+
+    ![](./images/HuggingFace_EnvVar.png)
+
+  - 保证程序不被他人滥用：增加登录校验环节，只有输入正确的密码才能进入应用(参考代码中的`certify_auth(username, password)`)；密码也以环境变量的方式存在服务器上
 
