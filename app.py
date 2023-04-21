@@ -13,7 +13,7 @@ dialogue_records = queue.Queue()  # 历史记录, 用于支持上下文对话, �
 dialogue_memory_size = 10  # 历史记录窗口的最大值
 enable_context_support = True  # 是否开启上下文支持
 temperature_value = 0.6     # 调节回答的准确性/丰富性(越靠近0越准确, 越靠近1越丰富)
-enable_authentication = False   # 是否启用登录校验
+enable_authentication = True   # 是否启用登录校验
 
 
 # 调用 open-ai 接口, 输入问题, 返回回答
