@@ -91,6 +91,7 @@ def on_role_changed(new_role):
     print(f"current role index: {new_role}")
     global system_desc
     system_desc = load_prompt_content(new_role)
+    dialogue_records.empty()
 
 
 # 登录校验
