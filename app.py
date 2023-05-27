@@ -6,16 +6,18 @@ import math
 import hashlib
 import json
 
-OPEN_AI_KEY_NAME = "OPENAI_API_KEY"  # 环境变量名, 需要将 openai 平台提供的 key 添加到系统的环境变量中
-OPEN_AI_APP_PWD_KEY = "OPENAI_APP_PWD_KEY"
+API_KEY_ENV_NAME = "OPENAI_API_KEY"  # 环境变量名, 需要将 openai 平台提供的 key 添加到系统的环境变量中
+PWD_ENV_NAME = "OPENAI_APP_PWD_KEY"  # 环境变量名, 用于登录校验
+system_index = 0
 system_desc = ""  # 性格设定
 dialogue_records = queue.Queue()  # 历史记录, 用于支持上下文对话, 以队列形式组织, 队内元素超出上限则出队
 dialogue_memory_size = 10  # 历史记录窗口的最大值
 enable_context_support = True  # 是否开启上下文支持
-temperature_value = 0.6
-enable_authentication = True
+temperature_value = 0.6     # 调节回答的准确性/丰富性(越靠近0越准确, 越靠近1越丰富)
+enable_authentication = True   # 是否启用登录校验
 
 
+# 调用 open-ai 接口, 输入问题, 返回回答
 def get_openai_response(input_msg):
     system_message = {"role": "system", "content": system_desc}
     user_message = {"role": "user", "content": input_msg}
@@ -82,25 +84,39 @@ def on_context_switch_changed(enable):
     global enable_context_support
     enable_context_support = enable
     if not enable:
-        dialogue_records.empty()
+        dialogue_records.queue.clear()
     return enable_context_support
 
 
 def on_role_changed(new_role):
+    print(f"current role index: {new_role}")
+
+    global system_index
+    system_index = min(max(0, system_index), get_prompts_num()-1)
+
     global system_desc
-    system_desc = load_prompt_content(new_role)
+    system_desc = load_prompt_content(system_index)
+
+    dialogue_records.queue.clear()
+    print(f"dialogue records: {dialogue_records.qsize()}")
 
 
+# 登录校验
 def certify_auth(username, password):
-    target_pwd = os.getenv(OPEN_AI_APP_PWD_KEY)
+    # 获取环境变量, 该值为正确密码经过md5算法加密后的字符串
+    target_pwd = os.getenv(PWD_ENV_NAME)
+
+    # 将输入的密码通过md5加密, 再转成16进制字符串
     encoded_pwd = hashlib.md5(password.encode()).hexdigest()
 
+    # 二者相同, 则通过校验
     if encoded_pwd == target_pwd:
         return True
     else:
         return False
 
 
+# 调用 whisper-ai 接口, 将音频转化成文字
 def transcribe(audio_source):
     if audio_source is None:
         return ""
@@ -110,6 +126,7 @@ def transcribe(audio_source):
         return transcript["text"]
 
 
+# 读取 prompt 列表
 def load_prompt_desc():
     desc_list = []
 
@@ -125,6 +142,7 @@ def load_prompt_desc():
     return desc_list
 
 
+# 读取指定的 prompt 内容
 def load_prompt_content(index):
     prompt_content = ""
 
@@ -139,55 +157,83 @@ def load_prompt_content(index):
         print(f"ERROR: prompt content with index '{index}' not found!")
         prompt_content = "You are a kind and helpful assistant"
 
+    print(f"content: {prompt_content}")
     return prompt_content
 
 
-if __name__ == "__main__":
+def get_prompts_num():
+    f = open("prompts.json")
+    data = json.load(f)
+    return len(data['sys_prompts'])
+
+
+# 检查并设置 api key
+def check_open_ai_key():
     # 读操作系统的环境变量, 本地调试前需要设置一下环境变量; 如果是部署到远端平台, 也可以在平台内设置
-    api_key_name = os.getenv(OPEN_AI_KEY_NAME)
-
-    if api_key_name is None:
-        print("No such environment variable called: {}".format(OPEN_AI_KEY_NAME))
+    api_key = os.getenv(API_KEY_ENV_NAME)
+    if api_key is None:
+        print("Such environment variable NOT found: {}".format(API_KEY_ENV_NAME))
+        return False
     else:
-        # 设置 api key
-        openai.api_key = api_key_name
+        openai.api_key = api_key
+        return True
 
-        # 基于 gradio 设置 UI, 以及各元素交互后的回调
-        blocks = gr.Blocks()
-        with blocks:
-            # personality = gr.Textbox(label="personality", placeholder="Describe the way you want your assistant to act like", value=personality_des)
-            # personality.change(on_personality_changed, inputs=[personality], outputs=[])
 
-            # context_switch = gr.Checkbox(label="context switch", info="Enable context-based dialogue", value=enable_context_support)
-            # context_switch.change(on_context_switch_changed, inputs=[context_switch], outputs=[])
+# 重置
+def on_click_reset():
+    on_role_changed(0)
+    return "Default"
 
-            # memory_size = gr.Number(label="Memory Size", value=dialogue_memory_size)
-            # memory_size.change(on_memory_size_changed, inputs=[memory_size], outputs=[])
 
-            # temperature_slider = gr.Slider(0, 1, step=0.1, label="temperature")
-            # temperature_slider.change(on_temperature_changed, inputs=[temperature_slider], outputs=[])
+# 创建UI界面
+def build_interface():
+    blocks = gr.Blocks()
+    with blocks:
+        # personality = gr.Textbox(label="personality", placeholder="Describe the way you want your assistant to act like", value=personality_des)
+        # personality.change(on_personality_changed, inputs=[personality], outputs=[])
 
-            choice_list = load_prompt_desc()
-            role_radio = gr.Radio(choices=choice_list, label="Choose The Role", value=choice_list[0], type="index")
-            role_radio.change(on_role_changed, inputs=[role_radio], outputs=[])
+        # context_switch = gr.Checkbox(label="context switch", info="Enable context-based dialogue", value=enable_context_support)
+        # context_switch.change(on_context_switch_changed, inputs=[context_switch], outputs=[])
 
-            # talking area
-            chatbot = gr.Chatbot(label="Chatting Window")
+        # memory_size = gr.Number(label="Memory Size", value=dialogue_memory_size)
+        # memory_size.change(on_memory_size_changed, inputs=[memory_size], outputs=[])
 
-            # text input area
-            message = gr.Textbox(label="Text Input", placeholder="Enter your message...")
+        # temperature_slider = gr.Slider(0, 1, step=0.1, label="temperature")
+        # temperature_slider.change(on_temperature_changed, inputs=[temperature_slider], outputs=[])
 
-            # audio input area
-            audio_input = gr.Audio(source="microphone", label="Audio Input", type="filepath")
-            audio_input.change(transcribe, inputs=[audio_input], outputs=[message])
+        # choose the role
+        choice_list = load_prompt_desc()
+        role_radio = gr.Radio(choices=choice_list, label="Choose The Role", value=choice_list[system_index], type="index")
+        role_radio.change(on_role_changed, inputs=[role_radio], outputs=[])
 
-            # submit button
-            submit = gr.Button("Send")
-            state = gr.State()
-            submit.click(conversation_history, inputs=[message, state], outputs=[chatbot, state])
+        # talking area
+        chatbot = gr.Chatbot(label="Chatting Window")
 
-        # 启动
-        if not enable_authentication:
-            blocks.launch()
-        else:
-            blocks.launch(auth=certify_auth)
+        # text input area
+        message = gr.Textbox(label="Text Input", placeholder="Enter your message...")
+
+        # audio input area
+        audio_input = gr.Audio(source="microphone", label="Audio Input", type="filepath")
+        audio_input.change(transcribe, inputs=[audio_input], outputs=[message])
+
+        # submit button
+        submit = gr.Button("Send")
+        state = gr.State()
+        submit.click(conversation_history, inputs=[message, state], outputs=[chatbot, state])
+
+        # reset button
+        reset_btn = gr.Button("Reset")
+        reset_btn.click(on_click_reset, inputs=[], outputs=[role_radio])
+
+    # 启动
+    if not enable_authentication:
+        blocks.launch()
+    else:
+        blocks.launch(auth=certify_auth)
+
+
+if __name__ == "__main__":
+    if check_open_ai_key():
+        build_interface()
+    else:
+        print("Interface init failed due to api key issue")
