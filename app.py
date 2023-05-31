@@ -8,12 +8,13 @@ import json
 
 API_KEY_ENV_NAME = "OPENAI_API_KEY"  # 环境变量名, 需要将 openai 平台提供的 key 添加到系统的环境变量中
 PWD_ENV_NAME = "OPENAI_APP_PWD_KEY"  # 环境变量名, 用于登录校验
+system_index = 0
 system_desc = ""  # 性格设定
 dialogue_records = queue.Queue()  # 历史记录, 用于支持上下文对话, 以队列形式组织, 队内元素超出上限则出队
 dialogue_memory_size = 10  # 历史记录窗口的最大值
 enable_context_support = True  # 是否开启上下文支持
 temperature_value = 0.6     # 调节回答的准确性/丰富性(越靠近0越准确, 越靠近1越丰富)
-enable_authentication = True   # 是否启用登录校验
+enable_authentication = False   # 是否启用登录校验
 
 
 # 调用 open-ai 接口, 输入问题, 返回回答
@@ -83,15 +84,21 @@ def on_context_switch_changed(enable):
     global enable_context_support
     enable_context_support = enable
     if not enable:
-        dialogue_records.empty()
+        dialogue_records.queue.clear()
     return enable_context_support
 
 
 def on_role_changed(new_role):
     print(f"current role index: {new_role}")
+
+    global system_index
+    system_index = min(max(0, new_role), get_prompts_num()-1)
+
     global system_desc
-    system_desc = load_prompt_content(new_role)
-    dialogue_records.empty()
+    system_desc = load_prompt_content(system_index)
+
+    dialogue_records.queue.clear()
+    print(f"dialogue records: {dialogue_records.qsize()}")
 
 
 # 登录校验
@@ -106,6 +113,7 @@ def certify_auth(username, password):
     if encoded_pwd == target_pwd:
         return True
     else:
+        print(f"correct md5: {encoded_pwd}, input md5: {target_pwd}")
         return False
 
 
@@ -154,6 +162,12 @@ def load_prompt_content(index):
     return prompt_content
 
 
+def get_prompts_num():
+    f = open("prompts.json")
+    data = json.load(f)
+    return len(data['sys_prompts'])
+
+
 # 检查并设置 api key
 def check_open_ai_key():
     # 读操作系统的环境变量, 本地调试前需要设置一下环境变量; 如果是部署到远端平台, 也可以在平台内设置
@@ -164,6 +178,12 @@ def check_open_ai_key():
     else:
         openai.api_key = api_key
         return True
+
+
+# 重置
+def on_click_reset():
+    on_role_changed(0)
+    return "Default"
 
 
 # 创建UI界面
@@ -182,12 +202,9 @@ def build_interface():
         # temperature_slider = gr.Slider(0, 1, step=0.1, label="temperature")
         # temperature_slider.change(on_temperature_changed, inputs=[temperature_slider], outputs=[])
 
-        # the default role is the 0th
-        on_role_changed(0)
-        choice_list = load_prompt_desc()
-
         # choose the role
-        role_radio = gr.Radio(choices=choice_list, label="Choose The Role", value=choice_list[0], type="index")
+        choice_list = load_prompt_desc()
+        role_radio = gr.Radio(choices=choice_list, label="Choose The Role", value=choice_list[system_index], type="index")
         role_radio.change(on_role_changed, inputs=[role_radio], outputs=[])
 
         # talking area
@@ -204,6 +221,10 @@ def build_interface():
         submit = gr.Button("Send")
         state = gr.State()
         submit.click(conversation_history, inputs=[message, state], outputs=[chatbot, state])
+
+        # reset button
+        reset_btn = gr.Button("Reset")
+        reset_btn.click(on_click_reset, inputs=[], outputs=[role_radio])
 
     # 启动
     if not enable_authentication:
