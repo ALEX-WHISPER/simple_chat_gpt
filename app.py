@@ -5,6 +5,8 @@ import queue
 import math
 import hashlib
 import json
+import schedule
+import time
 
 API_KEY_ENV_NAME = "OPENAI_API_KEY"  # 环境变量名, 需要将 openai 平台提供的 key 添加到系统的环境变量中
 PWD_ENV_NAME = "OPENAI_APP_PWD_KEY"  # 环境变量名, 用于登录校验
@@ -14,7 +16,7 @@ dialogue_records = queue.Queue()  # 历史记录, 用于支持上下文对话, �
 dialogue_memory_size = 10  # 历史记录窗口的最大值
 enable_context_support = True  # 是否开启上下文支持
 temperature_value = 0.6     # 调节回答的准确性/丰富性(越靠近0越准确, 越靠近1越丰富)
-enable_authentication = False   # 是否启用登录校验
+enable_authentication = True   # 是否启用登录校验
 
 
 # 调用 open-ai 接口, 输入问题, 返回回答
@@ -182,6 +184,7 @@ def check_open_ai_key():
 
 # 重置
 def on_click_reset():
+    print("Reset Everything")
     on_role_changed(0)
     return "Default"
 
@@ -232,9 +235,18 @@ def build_interface():
     else:
         blocks.launch(auth=certify_auth)
 
+    schedule.every().day.at("6:00").do(on_click_reset)
+
+    while True:
+        schedule.run_pending()
+        time.sleep(60)
+
 
 if __name__ == "__main__":
+    os.system("pip install -r requirements.txt")
+
     if check_open_ai_key():
         build_interface()
     else:
         print("Interface init failed due to api key issue")
+
